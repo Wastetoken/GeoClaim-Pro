@@ -1,0 +1,7 @@
+{
+  "name": "GeoClaim",
+  "description": "An advanced exploration tool for historical mine locations across the United States, featuring interactive KML data, AI-powered grounding in Google Search and Maps, and generative image tools.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
