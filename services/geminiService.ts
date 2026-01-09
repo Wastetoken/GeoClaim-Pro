@@ -1,8 +1,7 @@
 
 import { GoogleGenAI, Type, Modality, GenerateContentResponse, FunctionDeclaration } from "@google/genai";
-import { ChatMode, MineLocation } from "../types";
+import { ChatMode, MineLocation, SiteSafety, SiteWeather, SiteVideo } from "../types";
 
-// Helper for decoding base64 audio data
 function decode(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -13,7 +12,6 @@ function decode(base64: string) {
   return bytes;
 }
 
-// Helper for decoding raw PCM bytes to AudioBuffer
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -33,20 +31,18 @@ async function decodeAudioData(
   return buffer;
 }
 
-const SYSTEM_INSTRUCTION = `You are a world-class Mining Geologist, Claims Specialist, and Historical Researcher. 
+const SYSTEM_INSTRUCTION = `You are a world-class Mining Geologist, Claims Specialist, and Field Safety Officer. 
 
 CORE MISSION:
-Analyze the specific mine locality or claim provided by the user. 
+Analyze the specific mine locality, claim, or district provided by the user.
 
 CRITICAL PROTOCOLS:
-1. When a locality is provided in the context, focus ALL research and grounding on that specific site (Coordinates, Name).
-2. For ownership queries, use Google Search grounding to look for:
-   - BLM (Bureau of Land Management) LR2000/MLRS records.
-   - County recorder records for the specific Lat/Lng provided.
-   - Historical USGS bulletins (e.g., "USGS Mineral Resources of the US").
-3. Always report active vs abandoned status if found in recent news or data.
-4. Cite sources with specific URLs.
-5. If the user refers to "this claim" or "this site", refer to the 'ACTIVE LOCALITY CONTEXT' provided in the message.`;
+1. Focus research on coordinates and site names.
+2. For ownership, check BLM records and county recorders.
+3. For safety, identify specific environmental and physical hazards (shafts, rattlesnakes, flash flood zones).
+4. For weather, provide local conditions and accessibility advice.
+5. For media, find YouTube links that showcase exploration or history of the area.
+6. Always cite sources.`;
 
 export class GeminiService {
   private ai: GoogleGenAI;
@@ -66,7 +62,6 @@ export class GeminiService {
       tools: [{ googleSearch: {} }]
     };
 
-    // Construct the context string if a locality is selected
     let contextHeader = "";
     if (contextLocality) {
       contextHeader = `[ACTIVE LOCALITY CONTEXT]
@@ -77,7 +72,6 @@ Description: ${contextLocality.description.substring(0, 300)}
 User Question: `;
     }
 
-    // Only prepend context if the history is empty or it's a new context focus
     const finalPrompt = contextHeader + message;
     const contents: any[] = [...history, { role: 'user', parts: [{ text: finalPrompt }] }];
 
@@ -102,8 +96,52 @@ User Question: `;
       return { text: text, links: links };
     } catch (err) {
       console.error("Gemini API Error:", err);
-      return { text: "Error accessing claim database records.", links: [] };
+      return { text: "Error accessing claim records.", links: [] };
     }
+  }
+
+  async fetchSafetyInfo(loc: MineLocation): Promise<SiteSafety> {
+    const prompt = `Research safety hazards and emergency services for "${loc.name}" at coordinates ${loc.coordinates.lat}, ${loc.coordinates.lng}. Include physical mine hazards (shafts), environmental hazards, and the nearest major hospital name. Return JSON.`;
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        hazardLevel: { type: Type.STRING, description: "Low, Moderate, High, or Extreme" },
+        hazards: { type: Type.ARRAY, items: { type: Type.STRING } },
+        emergencyServices: { type: Type.STRING, description: "Nearest hospital name and city" }
+      },
+      required: ["hazardLevel", "hazards", "emergencyServices"]
+    };
+    return await this.generateStructuredResponse(prompt, schema);
+  }
+
+  async fetchWeatherInfo(loc: MineLocation): Promise<SiteWeather> {
+    const prompt = `Provide current weather and 3-day trend for coordinates ${loc.coordinates.lat}, ${loc.coordinates.lng} near "${loc.name}". Include the best months for visiting this specific terrain. Return JSON.`;
+    const schema = {
+      type: Type.OBJECT,
+      properties: {
+        current: { type: Type.STRING },
+        forecast: { type: Type.STRING },
+        bestVisitTime: { type: Type.STRING }
+      },
+      required: ["current", "forecast", "bestVisitTime"]
+    };
+    return await this.generateStructuredResponse(prompt, schema);
+  }
+
+  async fetchYoutubeVideos(loc: MineLocation): Promise<SiteVideo[]> {
+    const prompt = `Find 3 relevant YouTube exploration, history, or geological videos for the area of "${loc.name}" or its mining district. Coordinates: ${loc.coordinates.lat}, ${loc.coordinates.lng}. Return a JSON array of objects with title and url.`;
+    const schema = {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          url: { type: Type.STRING }
+        },
+        required: ["title", "url"]
+      }
+    };
+    return await this.generateStructuredResponse(prompt, schema);
   }
 
   async generateStructuredResponse(
@@ -115,6 +153,7 @@ User Question: `;
         model: 'gemini-3-flash-preview',
         contents: prompt,
         config: {
+          tools: [{ googleSearch: {} }],
           responseMimeType: "application/json",
           responseSchema: schema
         }
@@ -123,7 +162,7 @@ User Question: `;
       return JSON.parse(response.text?.trim() || "[]");
     } catch (error) {
       console.error("Structured Response Error:", error);
-      throw error;
+      return Array.isArray(schema.items) ? [] : {};
     }
   }
 
