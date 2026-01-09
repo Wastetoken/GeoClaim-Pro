@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, Modality, GenerateContentResponse, FunctionDeclaration } from "@google/genai";
-import { ChatMode } from "../types";
+import { ChatMode, MineLocation } from "../types";
 
 // Helper for decoding base64 audio data
 function decode(base64: string) {
@@ -33,29 +33,20 @@ async function decodeAudioData(
   return buffer;
 }
 
-const findLocalitiesNearbyDeclaration: FunctionDeclaration = {
-  name: 'findLocalitiesNearby',
-  parameters: {
-    type: Type.OBJECT,
-    description: 'Find mine localities within a specific area and radius from the local dataset.',
-    properties: {
-      latitude: { type: Type.NUMBER, description: 'The latitude of the center point.' },
-      longitude: { type: Type.NUMBER, description: 'The longitude of the center point.' },
-      radiusMiles: { type: Type.NUMBER, description: 'The radius in miles to search (default 20).' },
-      locationName: { type: Type.STRING, description: 'The name of the town or area requested.' }
-    },
-    required: ['latitude', 'longitude'],
-  },
-};
+const SYSTEM_INSTRUCTION = `You are a world-class Mining Geologist, Claims Specialist, and Historical Researcher. 
 
-const SYSTEM_INSTRUCTION = `You are a world-class Mining Geologist and Historical Researcher. 
-Your goal is to provide accurate, deep analysis of mine localities in the USA.
+CORE MISSION:
+Analyze the specific mine locality or claim provided by the user. 
 
-RULES FOR SEARCH & GROUNDING:
-1. When a user asks for "Geo-Reasoning" or "Mineralogy", conduct a deep search for USGS mineral reports and geological surveys for the specific coordinates or locality name.
-2. If searching for safety or weather, find CURRENT localized reports for that specific terrain (mountains, desert, etc).
-3. ALWAYS cite your sources. If the search tool returns data, incorporate it into a helpful narrative.
-4. If you find YouTube videos or documentaries of the specific mine site, list them as high-priority resources.`;
+CRITICAL PROTOCOLS:
+1. When a locality is provided in the context, focus ALL research and grounding on that specific site (Coordinates, Name).
+2. For ownership queries, use Google Search grounding to look for:
+   - BLM (Bureau of Land Management) LR2000/MLRS records.
+   - County recorder records for the specific Lat/Lng provided.
+   - Historical USGS bulletins (e.g., "USGS Mineral Resources of the US").
+3. Always report active vs abandoned status if found in recent news or data.
+4. Cite sources with specific URLs.
+5. If the user refers to "this claim" or "this site", refer to the 'ACTIVE LOCALITY CONTEXT' provided in the message.`;
 
 export class GeminiService {
   private ai: GoogleGenAI;
@@ -68,104 +59,96 @@ export class GeminiService {
     message: string,
     mode: ChatMode,
     history: { role: 'user' | 'model'; parts: { text: string }[] }[] = [],
-    image?: string
-  ): Promise<{ text: string; links?: { title: string; uri: string }[]; functionCalls?: any[] }> {
-    const modelMapping = {
-      [ChatMode.NORMAL]: 'gemini-3-flash-preview',
-      [ChatMode.THINKING]: 'gemini-3-pro-preview',
-      [ChatMode.SEARCH]: 'gemini-3-flash-preview',
-      [ChatMode.MAPS]: 'gemini-2.5-flash',
-      [ChatMode.LITE]: 'gemini-flash-lite-latest',
-    };
-
+    contextLocality?: MineLocation
+  ): Promise<{ text: string; links?: { title: string; uri: string }[] }> {
     const config: any = {
-      systemInstruction: SYSTEM_INSTRUCTION
+      systemInstruction: SYSTEM_INSTRUCTION,
+      tools: [{ googleSearch: {} }]
     };
-    const modelName = modelMapping[mode];
 
-    if (mode === ChatMode.THINKING) {
-      config.thinkingConfig = { thinkingBudget: 24576 };
+    // Construct the context string if a locality is selected
+    let contextHeader = "";
+    if (contextLocality) {
+      contextHeader = `[ACTIVE LOCALITY CONTEXT]
+Site Name: ${contextLocality.name}
+Coordinates: ${contextLocality.coordinates.lat}, ${contextLocality.coordinates.lng}
+Description: ${contextLocality.description.substring(0, 300)}
+---
+User Question: `;
     }
 
-    if (mode === ChatMode.SEARCH || mode === ChatMode.NORMAL || mode === ChatMode.THINKING) {
-      config.tools = [{ googleSearch: {} }];
-    } else if (mode === ChatMode.MAPS) {
-      config.tools = [{ functionDeclarations: [findLocalitiesNearbyDeclaration] }];
-    }
-
-    const contents: any[] = [...history];
-    const userParts: any[] = [{ text: message }];
-
-    if (image) {
-      userParts.push({
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: image.split(',')[1]
-        }
-      });
-    }
-
-    contents.push({ role: 'user', parts: userParts });
+    // Only prepend context if the history is empty or it's a new context focus
+    const finalPrompt = contextHeader + message;
+    const contents: any[] = [...history, { role: 'user', parts: [{ text: finalPrompt }] }];
 
     try {
       const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: modelName,
+        model: 'gemini-3-flash-preview',
         contents: contents,
         config: config
       });
 
-      // Robust response parsing
       let text = response.text || "";
-      
-      // Fallback: If text is empty but candidates exist, try to find text in parts
-      if (!text && response.candidates?.[0]?.content?.parts) {
-        text = response.candidates[0].content.parts
-          .filter(p => p.text)
-          .map(p => p.text)
-          .join('\n');
-      }
-
-      const functionCalls = response.functionCalls;
       let links: { title: string; uri: string }[] = [];
 
       const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (chunks) {
         links = chunks.map((c: any) => ({
-          title: c.web?.title || c.maps?.title || 'Geological Resource',
-          uri: c.web?.uri || c.maps?.uri || ''
+          title: c.web?.title || 'Geological Resource',
+          uri: c.web?.uri || ''
         })).filter((l: any) => l.uri);
       }
 
-      // If we have links but no text, generate a fallback message
-      if (!text && links.length > 0) {
-          text = "I have successfully gathered geological and safety records for this site. You can access the specific research links below.";
-      }
-
-      return { text: text, links: links, functionCalls: functionCalls };
+      return { text: text, links: links };
     } catch (err) {
       console.error("Gemini API Error:", err);
-      return { text: "The geological database connection was interrupted. This usually happens if the search query is too specific for the current model. Try a broader location name.", links: [] };
+      return { text: "Error accessing claim database records.", links: [] };
+    }
+  }
+
+  async generateStructuredResponse(
+    prompt: string,
+    schema: any
+  ): Promise<any> {
+    try {
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: schema
+        }
+      });
+      
+      return JSON.parse(response.text?.trim() || "[]");
+    } catch (error) {
+      console.error("Structured Response Error:", error);
+      throw error;
     }
   }
 
   async speakText(text: string): Promise<void> {
-    const response = await this.ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-      },
-    });
+    try {
+      const response = await this.ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: text }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+        },
+      });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContext, 24000, 1);
-      const source = outputAudioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(outputAudioContext.destination);
-      source.start();
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        const buffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start();
+      }
+    } catch (e) {
+      console.error("TTS Error", e);
     }
   }
 }
