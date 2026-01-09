@@ -1,9 +1,6 @@
 
 export type LocalityType = 
   | 'mine' 
-  | 'prospect'
-  | 'occurrence'
-  | 'facility'
   | 'geography' 
   | 'geology' 
   | 'admin' 
@@ -11,6 +8,8 @@ export type LocalityType =
   | 'protected' 
   | 'meteorite' 
   | 'erratic' 
+  | 'extraterrestrial' 
+  | 'artificial' 
   | 'paleobiodb' 
   | 'museum' 
   | 'other';
@@ -44,20 +43,6 @@ export interface Message {
   groundingLinks?: { title: string; uri: string }[];
 }
 
-export interface SiteSafety {
-  hazardLevel: 'Low' | 'Moderate' | 'High' | 'Extreme';
-  hazards: string[];
-  emergencyServices: string;
-}
-
-export interface SiteWeather {
-  current: string;
-  forecast: string;
-  bestVisitTime: string;
-}
-
-export interface SiteVideo {
-  title: string;
-  url: string;
-  thumbnail?: string;
+export interface KmlData {
+  localities: MineLocation[];
 }

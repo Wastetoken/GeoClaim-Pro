@@ -1,5 +1,5 @@
 
-const MINERAL_LIST_URL = 'https://pub-90f3d40bb40d44ab8aeb9563e62f17ec.r2.dev/Mineral-Image-List.txt';
+const MINERAL_LIST_URL = 'services/Mineral-Image-List.txt'; 
 
 export class MineralService {
   private static instance: MineralService;
