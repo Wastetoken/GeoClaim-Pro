@@ -17,7 +17,8 @@ const BASE_LAYERS = {
   franceSat: { name: "GeoportailFrance Satellite", url: "https://wxs.ign.fr/choisirgeoportail/geoportail/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/jpeg&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", attribution: '&copy; IGN' },
   esriSat: { name: "Esri Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attribution: 'Tiles &copy; Esri' },
   esriHistoric: { name: "Esri Historic", url: "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/46505/{z}/{y}/{x}", attribution: 'Tiles &copy; Esri' },
-  usgsTopo: { name: "USGS Topo", url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}", attribution: 'USGS' }
+  usgsTopo: { name: "USGS Topo", url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}", attribution: 'USGS' },
+  paleobiodb: { name: "PBDB Localities", url: "https://pub-b382766e0cb14ca8a47adf43b31f8333.r2.dev/PBDB/PBDB.json/{z}/{y}/{x}", attribution: 'PBDB' }
 };
 
 const OVERLAYS = {
