@@ -1,0 +1,37 @@
+No Locality Type Selected
+
+Mines & Prospects
+
+Physical Geography
+
+Geological Features
+
+Administrative Divisions
+
+Settlements
+
+Protected Areas
+
+Meteorites
+
+Erratic's
+
+Extraterrestrial (e.g. on Moon)
+
+Artificial Features
+
+PaleoBioDB
+
+Museum
+
+Other Item (page specific)
+
+The small symbol inside of an icon describes the class of locality listed. This can be combined with the three base icon colours (red, green, white) in any combination.
+
+Red icons have coordinates entered into the system directly.
+
+Green icons have coordinates estimated by the system and may also display a blue margin of error circle around them. 
+
+White icons are shown in certain pages to distinguish the locality in question from nearby localities. 
+
+When multiple icons are close together they may be clustered into a group represented by a green circle, click to reveal the contents. 
